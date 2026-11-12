@@ -28,7 +28,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-latest       # Apple Silicon
+            runner: macos-15-intel     # cross-compiled (Apple Silicon runners are often out of capacity)
           - arch: x86_64
             runner: macos-15-intel     # Intel
     steps:
@@ -50,7 +50,8 @@ jobs:
         run: |
           otool -L build/bin/whisper-cli
           if otool -L build/bin/whisper-cli | tail -n +2 | grep -v -E '/usr/lib/|/System/Library/'; then echo "unexpected dynamic dependency"; exit 1; fi
-          if [ "${{ matrix.arch }}" = "arm64" ]; then build/bin/whisper-cli --help | head -3; fi
+          lipo -info build/bin/whisper-cli
+          if [ "$(uname -m)" = "${{ matrix.arch }}" ]; then build/bin/whisper-cli --help | head -3; fi
       - name: Package
         run: |
           [ "${{ matrix.arch }}" = "arm64" ] && P=darwin-arm64 || P=darwin-x64
