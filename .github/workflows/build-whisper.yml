@@ -1,0 +1,95 @@
+name: Build whisper-cli for QuickKeys
+
+# Builds a self-contained whisper-cli (no Homebrew / no extra .dylib/.dll) for every platform
+# and publishes it as a GitHub Release. The QuickKeys Premiere plugin downloads
+#   https://github.com/<this repo>/releases/latest/download/whisper-cli-<platform>.gz
+# on first use, so clients never have to install anything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      whisper_ref:
+        description: "whisper.cpp tag to build (empty = latest release)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths: [".github/workflows/build-whisper.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14            # Apple Silicon runner; builds arm64 natively and cross-compiles x86_64
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - name: Get whisper.cpp source
+        run: |
+          REF="${{ github.event.inputs.whisper_ref }}"
+          if [ -z "$REF" ]; then REF=$(curl -s https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])'); fi
+          echo "REF=$REF" >> $GITHUB_ENV
+          git clone --depth 1 --branch "$REF" https://github.com/ggml-org/whisper.cpp src
+      - name: Build (static, Metal embedded)
+        run: |
+          cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF \
+            -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DWHISPER_SDL2=OFF
+          cmake --build build --config Release -j 4 --target whisper-cli
+      - name: Check it is self-contained
+        run: |
+          otool -L build/bin/whisper-cli
+          if otool -L build/bin/whisper-cli | tail -n +2 | grep -v -E '/usr/lib/|/System/Library/'; then echo "unexpected dynamic dependency"; exit 1; fi
+          if [ "${{ matrix.arch }}" = "arm64" ]; then build/bin/whisper-cli --help | head -3; fi
+      - name: Package
+        run: |
+          [ "${{ matrix.arch }}" = "arm64" ] && P=darwin-arm64 || P=darwin-x64
+          codesign --force -s - build/bin/whisper-cli
+          gzip -9 -c build/bin/whisper-cli > whisper-cli-$P.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: whisper-cli-*.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Get whisper.cpp source
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.whisper_ref }}"
+          if [ -z "$REF" ]; then REF=$(curl -s https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | python -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])'); fi
+          git clone --depth 1 --branch "$REF" https://github.com/ggml-org/whisper.cpp src
+      - name: Build (static CRT)
+        run: |
+          cmake -S src -B build -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DWHISPER_SDL2=OFF
+          cmake --build build --config Release -j 4 --target whisper-cli
+      - name: Package
+        shell: bash
+        run: |
+          EXE=$(ls build/bin/Release/whisper-cli.exe build/bin/whisper-cli.exe 2>/dev/null | head -1)
+          gzip -9 -c "$EXE" > whisper-cli-win32-x64.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: whisper-cli-*.gz
+
+  release:
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="tools-$(date +%Y%m%d-%H%M)"
+          gh release create "$TAG" dist/*.gz --repo "${{ github.repository }}" --title "QuickKeys tools $TAG" --notes "whisper-cli builds for QuickKeys (self-contained)." --latest
