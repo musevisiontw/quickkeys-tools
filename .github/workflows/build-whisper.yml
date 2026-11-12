@@ -99,10 +99,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Publish release
+      - name: Publish to the fixed "tools" release (each platform overwrites only its own file)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls dist/*.gz || { echo "nothing built"; exit 1; }
-          TAG="tools-$(date +%Y%m%d-%H%M)"
-          gh release create "$TAG" dist/*.gz --repo "${{ github.repository }}" --title "QuickKeys tools $TAG" --notes "whisper-cli builds for QuickKeys (self-contained)." --latest
+          gh release view tools --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create tools --repo "${{ github.repository }}" --title "QuickKeys tools" \
+              --notes "Self-contained whisper-cli builds downloaded automatically by the QuickKeys Premiere plugin." --latest
+          gh release upload tools dist/*.gz --repo "${{ github.repository }}" --clobber
