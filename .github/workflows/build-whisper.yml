@@ -21,10 +21,16 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-15            # Apple Silicon runner; builds arm64 natively and cross-compiles x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
-        arch: [arm64, x86_64]
+        include:
+          - arch: arm64
+            runner: macos-latest       # Apple Silicon
+          - arch: x86_64
+            runner: macos-15-intel     # Intel
     steps:
       - name: Get whisper.cpp source
         run: |
@@ -83,6 +89,7 @@ jobs:
 
   release:
     needs: [mac, windows]
+    if: ${{ always() }}          # publish whatever platforms succeeded
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -93,5 +100,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ls dist/*.gz || { echo "nothing built"; exit 1; }
           TAG="tools-$(date +%Y%m%d-%H%M)"
           gh release create "$TAG" dist/*.gz --repo "${{ github.repository }}" --title "QuickKeys tools $TAG" --notes "whisper-cli builds for QuickKeys (self-contained)." --latest
