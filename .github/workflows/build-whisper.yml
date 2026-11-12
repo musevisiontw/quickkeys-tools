@@ -35,7 +35,8 @@ jobs:
       - name: Get whisper.cpp source
         run: |
           REF="${{ github.event.inputs.whisper_ref }}"
-          if [ -z "$REF" ]; then REF=$(curl -s https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])'); fi
+          if [ -z "$REF" ]; then REF=$(git ls-remote --tags --sort=-v:refname https://github.com/ggml-org/whisper.cpp 'v*' | grep -v '\^{}' | head -1 | sed 's#.*refs/tags/##'); fi
+          echo "building whisper.cpp $REF"
           echo "REF=$REF" >> $GITHUB_ENV
           git clone --depth 1 --branch "$REF" https://github.com/ggml-org/whisper.cpp src
       - name: Build (static, Metal embedded)
@@ -69,7 +70,8 @@ jobs:
         shell: bash
         run: |
           REF="${{ github.event.inputs.whisper_ref }}"
-          if [ -z "$REF" ]; then REF=$(curl -s https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | python -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])'); fi
+          if [ -z "$REF" ]; then REF=$(git ls-remote --tags --sort=-v:refname https://github.com/ggml-org/whisper.cpp 'v*' | grep -v '\^{}' | head -1 | sed 's#.*refs/tags/##'); fi
+          echo "building whisper.cpp $REF"
           git clone --depth 1 --branch "$REF" https://github.com/ggml-org/whisper.cpp src
       - name: Build (static CRT)
         run: |
