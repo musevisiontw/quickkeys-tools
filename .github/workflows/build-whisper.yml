@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-14            # Apple Silicon runner; builds arm64 natively and cross-compiles x86_64
+    runs-on: macos-15            # Apple Silicon runner; builds arm64 natively and cross-compiles x86_64
     strategy:
       matrix:
         arch: [arm64, x86_64]
@@ -72,7 +72,9 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          EXE=$(ls build/bin/Release/whisper-cli.exe build/bin/whisper-cli.exe 2>/dev/null | head -1)
+          EXE=build/bin/Release/whisper-cli.exe
+          [ -f "$EXE" ] || EXE=build/bin/whisper-cli.exe
+          ls -la "$EXE"
           gzip -9 -c "$EXE" > whisper-cli-win32-x64.gz
       - uses: actions/upload-artifact@v4
         with:
